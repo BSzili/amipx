@@ -174,6 +174,19 @@ struct AMIPX_Library {
  struct SignalSemaphore *SocketSem;
  struct AMIPX_ECB *RouteSearchECB;
  UBYTE *RouteSearchHeader;
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct DosLibrary *DOSBase;
+ struct UtilityBase *UtilityBase;
+ // globals used to communicate with tasks
+ struct AMIPX_Nic *tasknic;				// &Card[taskcardnum]
+ struct Task *callingtask;
+ UBYTE taskcardnum;
+ ULONG tasksigmask;
+ int taskretval;
+ unsigned char *taskdevname;				// tasknic->DeviceName
+ int taskunitnumber;						// tasknic->Unit
+ unsigned char *tasknodeaddr;				// tasknic->Address
+#endif
 };
    
 

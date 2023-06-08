@@ -6,9 +6,18 @@
 #include <exec/semaphores.h>
 #include <exec/tasks.h>
 #include <dos/dos.h>
+#ifdef __VBCC__
+#define _TIMEVAL_DEFINED
+struct timeval {
+	ULONG tv_secs;
+	ULONG tv_micro;
+};
+#endif
 #include <amipx_priv.h>
+#if !defined(__VBCC__) && !defined(__GNUC__)
 #include <amipx_protos_p.h>
 #include <amipx_pragmas_p.h>
+#endif
 #include <clib/exec_protos.h>
 #include <devices/timer.h>
 #include <devices/sana2.h>
@@ -17,15 +26,104 @@
 #include <clib/dos_protos.h>
 #include <exec/memory.h>
 #include <utility/hooks.h>
+#if defined(__VBCC__) || defined(__GNUC__)
+#include <proto/exec.h>
+#include <proto/dos.h>
+#include <proto/utility.h>
+#ifdef __VBCC__
+#include <inline/exec_protos.h>
+#include <inline/dos_protos.h>
+#include <inline/utility_protos.h>
+#endif
+#include <string.h>
+#include <stdio.h>
+#include <clib/alib_protos.h>
+#include <SDI_compiler.h>
+#include <SDI_hook.h>
+#ifdef DEBUG
+#include <clib/debug_protos.h>
+#else
+#define kprintf(...)
+#endif
+#endif
 #define MAX(x,y) ((x)<(y)?(y):(x))
 
+#if !defined(__VBCC__) && !defined(__GNUC__)
 // amiga.lib
 struct Task *CreateTask( STRPTR name, long pri, APTR initPC,
         unsigned long stackSize );
+#else
+int main(void) { return 0; }
+#endif
+#ifdef __VBCC__
+// sprintf is missing from vbcc's amig.lib
+void mySPrintf(char *dest, const char *fmt, APTR args, ...)
+{
+	static const ULONG StuffChar = 0x16c04e75; /* move.b d0,(a3)+ ; rts */
+	RawDoFmt(fmt, (APTR)&args, (void(*)())&StuffChar, dest);
+}
+#define sprintf mySPrintf
+#endif
 
 int AMIPX_Init(struct AMIPX_Library *);
 void AMIPX_Exit(struct AMIPX_Library *);
 void AMIPX_cleanup(struct AMIPX_Library *);
+#if defined(__VBCC__) || defined(__GNUC__)
+APTR myInit(REG(a0, unsigned long seglist),
+			REG(d0, struct AMIPX_Library *AMIPX_Library),
+			REG(a6, struct Library *SysBase));
+long myOpen(REG(a6, struct AMIPX_Library *AMIPX_Library));
+long myClose(REG(a6, struct AMIPX_Library *AMIPX_Library));
+long myExpunge(REG(a6, struct AMIPX_Library *AMIPX_Library));
+
+VOID AMIPX_GetLocalAddr(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                        REG(a0, UBYTE *addressarray));
+UWORD AMIPX_SendPacket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB));
+UWORD AMIPX_OpenSocket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                      REG(d0, UWORD socknum));
+VOID AMIPX_CloseSocket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(d0, UWORD socknum));
+UWORD AMIPX_ListenForPacket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB));
+VOID AMIPX_RelinquishControl(REG(a6, struct AMIPX_Library *AMIPX_Library));
+UWORD AMIPX_GetLocalTarget(REG(a6, struct AMIPX_Library *AMIPX_Library),
+			  REG(a0, UBYTE *internetwaddr),REG(a1, UBYTE *localtarget));
+
+VOID AMIPX_GetLocalAddrI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                        REG(a0, UBYTE *addressarray));
+UWORD AMIPX_SendPacketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB));
+UWORD AMIPX_SendPacketR(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB));
+UWORD AMIPX_OpenSocketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                      REG(d0, UWORD socknum));
+VOID AMIPX_CloseSocketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(d0, UWORD socknum));
+UWORD AMIPX_ListenForPacketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB));
+VOID AMIPX_RelinquishControlI(REG(a6, struct AMIPX_Library *AMIPX_Library));
+UWORD AMIPX_GetLocalTargetI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+			  REG(a0, UBYTE *internetwaddr),REG(a1, UBYTE *localtarget));
+			  
+#ifdef __libnix__
+/*int raise(int sig) {return 0;} // TODO REMOVE!!!
+int exit(int val) {do {} while(1);};
+int _WBenchMsg;
+//int _lx_fhfromfd;*/
+#endif
+struct ExecBase *SysBase;
+//struct DosLibrary *DOSBase;
+#if defined(__GNUC__) && defined(DEBUG)
+struct UtilityBase *UtilityBase;
+#endif
+
+/*
+int main(void) { return 0; }
+int __exit(int val) { return 0; }
+*/
+
+#else
 void myInit(void);
 long myOpen(void);
 long myClose(void);
@@ -44,6 +142,7 @@ struct UtilityBase *UtilityBase;
 #pragma regcall(AMIPX_ListenForPacketI(A6,A0))
 #pragma regcall(AMIPX_RelinquishControlI(A6))
 #pragma regcall(AMIPX_GetLocalTargetI(A6,A0,A1))
+#endif
 
 /* library initialization table, used for AUTOINIT libraries			*/
 struct InitTable {
@@ -54,19 +153,19 @@ struct InitTable {
 };
 
 void *libfunctab[] = {	/* my function table */
-	myOpen,					/* standard open	*/
-	myClose,				/* standard close	*/
-	myExpunge,				/* standard expunge	*/
-	0,
+	(void *)myOpen,					/* standard open	*/
+	(void *)myClose,				/* standard close	*/
+	(void *)myExpunge,				/* standard expunge	*/
+	NULL,
 
 	/* ------	user UTILITIES */
-        AMIPX_OpenSocket,
-        AMIPX_CloseSocket,
-        AMIPX_ListenForPacket,
-        AMIPX_SendPacket,
-        AMIPX_GetLocalAddr,
-	AMIPX_RelinquishControl,
-	AMIPX_GetLocalTarget,
+	(void *)AMIPX_OpenSocket,
+	(void *)AMIPX_CloseSocket,
+	(void *)AMIPX_ListenForPacket,
+	(void *)AMIPX_SendPacket,
+	(void *)AMIPX_GetLocalAddr,
+	(void *)AMIPX_RelinquishControl,
+	(void *)AMIPX_GetLocalTarget,
 	(void *)-1			/* end of function vector table */
 };
 
@@ -74,19 +173,44 @@ struct InitTable myInitTab =  {
 	sizeof (struct AMIPX_Library),
 	libfunctab,
 	0,		/* will initialize my data in funkymain()	*/
-	myInit
+	(void(*)())myInit
 };
 
+#if defined(__VBCC__) || defined(__GNUC__)
+#define MYVERSION	1
+#define MYPRI		0
+#endif
 #define MYREVISION	24	/* would be nice to auto-increment this	*/
 
 char myname[] = "amipx.library";
 char myid[] = "AMIPX v1.24 (17 Oct 1998)\r\n";
 
+#if defined(__VBCC__) || defined(__GNUC__)
+const struct Resident myRomTag = {
+	RTC_MATCHWORD,
+	(struct Resident *)&myRomTag,
+	(struct Resident *)&myRomTag + 1,
+	RTF_AUTOINIT,
+	MYVERSION,
+	NT_LIBRARY,
+	MYPRI,
+	(char *)myname,
+	(char *)myid,
+	(APTR)&myInitTab
+};
+#else
 extern struct Resident	myRomTag;
+#endif
 
 
+#if defined(__VBCC__) || defined(__GNUC__)
+APTR myInit(REG(a0, unsigned long seglist),
+			REG(d0, struct AMIPX_Library *AMIPX_Library),
+			REG(a6, struct Library *sysbase))
+#else
 long
 _main(struct AMIPX_Library *AMIPX_Library, unsigned long seglist)
+#endif
 {
 	AMIPX_Library->ml_SegList = seglist;
 
@@ -97,21 +221,51 @@ _main(struct AMIPX_Library *AMIPX_Library, unsigned long seglist)
 	AMIPX_Library->ml_Lib.lib_Version = myRomTag.rt_Version;
 	AMIPX_Library->ml_Lib.lib_Revision = MYREVISION;
 	AMIPX_Library->ml_Lib.lib_IdString = (APTR) myid;
+#if defined(__VBCC__) || defined(__GNUC__)
+	AMIPX_Library->SysBase = sysbase;
+	SysBase = AMIPX_Library->SysBase;
+#else
         AMIPX_Library->SysBase=*((APTR *)4L);
+#endif
         AMIPX_Library->Inited=0;
+
+#if defined(__VBCC__) || defined(__GNUC__)
+	if ((AMIPX_Library->DOSBase = (struct DosLibrary *)OpenLibrary("dos.library", 37L))) {
+		//DOSBase = AMIPX_Library->DOSBase;
+		if ((AMIPX_Library->UtilityBase = (struct UtilityBase *)OpenLibrary("utility.library", 37L))) {
+			//UtilityBase = AMIPX_Library->UtilityBase;
+#if defined(__GNUC__) && defined(DEBUG)
+			UtilityBase = AMIPX_Library->UtilityBase;
+#endif
+			return AMIPX_Library;
+		}
+	}
+
+	FreeMem((char *)AMIPX_Library-AMIPX_Library->ml_Lib.lib_NegSize, AMIPX_Library->ml_Lib.lib_NegSize+AMIPX_Library->ml_Lib.lib_PosSize);
+
+	return NULL;
+#endif
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+long myOpen(REG(a6, struct AMIPX_Library *AMIPX_Library))
+#else
 long
 myOpen(void)
+#endif
 {
+#if !defined(__VBCC__) && !defined(__GNUC__)
 	struct AMIPX_Library *AMIPX_Library;
+#endif
 
         /* mark us as having another customer		*/
         if(AMIPX_Library->ml_Lib.lib_OpenCnt==0)
          if(!AMIPX_Init(AMIPX_Library)) 
           return 0L;
 
+#if !defined(__VBCC__) && !defined(__GNUC__)
         AMIPX_Library->SysBase=*((APTR *)4L);
+#endif
 
         AMIPX_Library->Inited=1;
 
@@ -122,10 +276,16 @@ myOpen(void)
         return ((long) AMIPX_Library);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+long myClose(REG(a6, struct AMIPX_Library *AMIPX_Library))
+#else
 long
 myClose(void)
+#endif
 {
+#if !defined(__VBCC__) && !defined(__GNUC__)
 	struct AMIPX_Library *AMIPX_Library;
+#endif
 	long retval = 0;
 
 	AMIPX_cleanup(AMIPX_Library);
@@ -137,20 +297,34 @@ myClose(void)
   			 * and I have a delayed expunge pending
 			 */
                         AMIPX_Library->Inited=0;
+#if defined(__VBCC__) || defined(__GNUC__)
+			retval = myExpunge(AMIPX_Library); /* return segment list	*/
+#else
 			retval = myExpunge(); /* return segment list	*/
+#endif
 		}
 	}
 
 	return (retval);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+long myExpunge(REG(a6, struct AMIPX_Library *AMIPX_Library))
+#else
 long
 myExpunge(void)
+#endif
 {
+#if !defined(__VBCC__) && !defined(__GNUC__)
 	struct AMIPX_Library *AMIPX_Library;
+#endif
 	unsigned long seglist = 0;
 	long libsize;
+#if defined(__VBCC__) || defined(__GNUC__)
+	struct ExecBase *SysBase = AMIPX_Library->SysBase;
+#else
 	extern struct Library *DOSBase;
+#endif
 
 	if (AMIPX_Library->ml_Lib.lib_OpenCnt == 0) {
 		/* really expunge: remove libbase and freemem	*/
@@ -160,9 +334,16 @@ myExpunge(void)
 		Remove(&AMIPX_Library->ml_Lib.lib_Node);
 				/* i'm no longer an installed library	*/
 
+#if defined(__VBCC__) || defined(__GNUC__)
+		CloseLibrary((struct Library *)AMIPX_Library->UtilityBase);
+		CloseLibrary((struct Library *)AMIPX_Library->DOSBase);
+#endif
+
 		libsize = AMIPX_Library->ml_Lib.lib_NegSize+AMIPX_Library->ml_Lib.lib_PosSize;
 		FreeMem((char *)AMIPX_Library-AMIPX_Library->ml_Lib.lib_NegSize, libsize);
+#if !defined(__VBCC__) && !defined(__GNUC__)
 		CloseLibrary(DOSBase);		/* keep the counts even */
+#endif
 	}
 	else
 		AMIPX_Library->ml_Lib.lib_Flags |= LIBF_DELEXP;
@@ -171,12 +352,16 @@ myExpunge(void)
 	return ((long) seglist);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+HOOKPROTO(AMIPX_PacketFilter, BOOL, struct IOSana2Req *req, APTR data)
+#else
 BOOL AMIPX_PacketFilter(struct Hook *,struct IOSana2Req *,APTR);
 
 #pragma regcall(AMIPX_PacketFilter(a0,a2,a1))
 	    
 BOOL AMIPX_PacketFilter(struct Hook *hook,struct IOSana2Req *req, 
                         APTR data)
+#endif
 {
  register unsigned char *fromcp;
  struct AMIPX_Nic *NIC;
@@ -210,9 +395,15 @@ BOOL AMIPX_PacketFilter(struct Hook *hook,struct IOSana2Req *req,
  return FALSE;
 }	 		
 
+#if defined(__VBCC__) || defined(__GNUC__)
+BOOL CopyFromECBToS2(REG(a0, VOID *to), REG(a1, struct AMIPX_ECB *ecb), REG(d0, ULONG n));
+BOOL CopyFromS2ToBuff(REG(a0, UBYTE *to), REG(a1, VOID *from), REG(d0, ULONG n));
+BOOL CopyNothing(REG(a0, VOID *to), REG(a1, VOID *from), REG(d0, ULONG n));
+#else
 BOOL CopyFromECBToS2(VOID *,struct AMIPX_ECB *,ULONG);
 BOOL CopyFromS2ToBuff(UBYTE *,VOID *,ULONG);
 BOOL CopyNothing(VOID *,VOID *,ULONG);
+#endif
 /*
    AMIPX_searchsocket returns either the position of the socketnumber in the
    index (if found) or the position where it should be inserted (if not found)
@@ -372,21 +563,32 @@ void AMIPX_addroute(struct AMIPX_Library *AMIPX_Lib,ULONG Network,
 // }
 //}
 
+#if defined(__VBCC__) || defined(__GNUC__)
+BOOL CopyNothing(REG(a0, VOID *to), REG(a1, VOID *from), REG(d0, ULONG n))
+#else
 #pragma regcall(CopyNothing(a0,a1,d0))
 BOOL CopyNothing(to,from,n)
 VOID *to;
 VOID *from;
 ULONG n;
+#endif
 {
  return FALSE;
 }
        
+
+#if !defined(__VBCC__) && !defined(__GNUC__)
 #pragma regcall(CopyFromECBToS2(a0,a1,d0))
+#endif
        
+#if defined(__VBCC__) || defined(__GNUC__)
+BOOL CopyFromECBToS2(REG(a0, VOID *to), REG(a1, struct AMIPX_ECB *ecb), REG(d0, ULONG n))
+#else
 BOOL CopyFromECBToS2(to,ecb,n)
 VOID *to;
 struct AMIPX_ECB *ecb;
 ULONG n;
+#endif
 {
  int e2prefixsize=0;
  int esprefixsize=8;
@@ -446,17 +648,23 @@ ULONG n;
  return TRUE;
 }
  
+#if !defined(__VBCC__) && !defined(__GNUC__)
 #pragma regcall(CopyFromS2ToBuff(a0,a1,d0))
+#endif
  
 /*********************************************************************
  * Notice the difference between the data structures used in a send  *
  * and in a receive: the argument to a send is the ecb itself, while *
  * in the receive, the argument is a contiguous block of memory.     *
  *********************************************************************/
+#if defined(__VBCC__) || defined(__GNUC__)
+BOOL CopyFromS2ToBuff(REG(a0, UBYTE *to), REG(a1, VOID *from), REG(d0, ULONG n))
+#else
 BOOL CopyFromS2ToBuff(to,from,n)
 UBYTE *to; 
 VOID *from;
 ULONG n;
+#endif
 {
  register UBYTE *fromcp;
  register int t;
@@ -502,6 +710,17 @@ void AMIPX_initioreq(struct AMIPX_Nic *NIC,
  sp->ios2_BufferManagement=dr->ios2_BufferManagement;
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+#define task_AMIPX_Lib AMIPX_Library
+#define tasknic AMIPX_Library->tasknic
+#define callingtask AMIPX_Library->callingtask
+#define taskcardnum AMIPX_Library->taskcardnum
+#define tasksigmask AMIPX_Library->tasksigmask
+#define taskretval AMIPX_Library->taskretval
+#define taskdevname AMIPX_Library->taskdevname
+#define taskunitnumber AMIPX_Library->taskunitnumber
+#define tasknodeaddr AMIPX_Library->tasknodeaddr
+#else
 struct AMIPX_Library *task_AMIPX_Lib;
 struct AMIPX_Nic *tasknic;
 struct Task *callingtask;
@@ -511,7 +730,16 @@ int taskretval;
 unsigned char *taskdevname;
 int taskunitnumber;
 unsigned char *tasknodeaddr;
+#endif
 
+#if defined(__VBCC__) || defined(__GNUC__)
+typedef void (*ESRFunc)(REG(d0, UBYTE caller), REG(a0, struct AMIPX_ECB *ecb));
+//#define ESR(address, caller, ecb) (((ESRFunc)(address))((caller),(ecb)))
+void ESR(REG(a1, APTR address), REG(d0, UBYTE caller), REG(a0, struct AMIPX_ECB *ecb))
+{
+	((ESRFunc)address)(caller,ecb);
+}
+#else
 void ESR(APTR,UBYTE,struct AMIPX_ECB *);
 #pragma regcall(ESR(A1,D0,A0))
 void ESR(APTR address,UBYTE caller,struct AMIPX_ECB *ecb)
@@ -520,6 +748,7 @@ void ESR(APTR address,UBYTE caller,struct AMIPX_ECB *ecb)
  jsr (a1)
 #endasm
 }
+#endif
 void AMIPX_ESRTask(void)
 {
  struct AMIPX_ECB *ecb;
@@ -527,8 +756,15 @@ void AMIPX_ESRTask(void)
  int sigbit,sigbit2;
  char running;
  ULONG sigret;
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct AMIPX_Library *AMIPX_Library;
+ struct ExecBase *SysBase=*((APTR *)4L);
 
+ Wait(SIGBREAKF_CTRL_F);
+ AMIPX_Library = FindTask(NULL)->tc_UserData;
+#else
  geta4();
+#endif
 
  AMIPX_Lib=task_AMIPX_Lib;
 
@@ -548,8 +784,14 @@ void AMIPX_ESRTask(void)
   AMIPX_Lib->ESRSignalMask=1<<sigbit2;
  }
  if(taskretval==0) {
+#if defined(__VBCC__) || defined(__GNUC__)
+  Forbid();
+#endif
   Signal(callingtask,tasksigmask);
   DeleteTask(NULL);
+#if defined(__VBCC__) || defined(__GNUC__)
+  return;
+#endif
  }
  SetSignal(0L,AMIPX_Lib->KillESRSignalMask|AMIPX_Lib->ESRSignalMask);
  Signal(callingtask,tasksigmask);
@@ -574,12 +816,17 @@ void AMIPX_ESRTask(void)
    ReleaseSemaphore(AMIPX_Lib->ESRSem);
    if(ecb->ESR) {
     ESR(ecb->ESR,0xff,ecb);
+#if !defined(__VBCC__) && !defined(__GNUC__)
     geta4();
+#endif
    }
    ObtainSemaphore(AMIPX_Lib->ESRSem);
   }
  }
  ReleaseSemaphore(AMIPX_Lib->ESRSem);
+#if defined(__VBCC__) || defined(__GNUC__)
+ Forbid();
+#endif
  Signal(callingtask,tasksigmask); // tell AMIPX_Exit that we're done
  DeleteTask(NULL);
 }
@@ -614,9 +861,13 @@ struct RIPPacket {
 
 // RIPESR handles all RIP packets for the standard RIP socket AMIPX_RIPPORT
 // It handles both replies and requests
+#if defined(__VBCC__) || defined(__GNUC__)
+void AMIPX_RIPESR(REG(d0, UBYTE caller), REG(a0, struct ECB2 *ecb))
+#else
 void AMIPX_RIPESR(UBYTE,struct ECB2 *);
 #pragma regcall(AMIPX_RIPESR(D0,A0))
 void AMIPX_RIPESR(UBYTE caller,struct ECB2 *ecb)
+#endif
 {
  struct AMIPX_Library *AMIPX_Lib;
  struct RIPPacket *RIPPacket;
@@ -625,13 +876,21 @@ void AMIPX_RIPESR(UBYTE caller,struct ECB2 *ecb)
  struct RIPPacket *RIPOutPacket;
  struct ECB2 *RIPECB;
  int actualentries,numentries,entry,pos,routepos,table,CardNum,t;
- 
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct ExecBase *SysBase;
+#endif
+
+#if !defined(__VBCC__) && !defined(__GNUC__)
  geta4();
+#endif
 
  if(ecb==NULL)
   return;
 
  AMIPX_Lib=ecb->Link; 
+#if defined(__VBCC__) || defined(__GNUC__)
+ SysBase = AMIPX_Lib->SysBase;
+#endif
 
  // parse RIP packet and update routing table
  PacketHeader=(struct AMIPX_PacketHeader *)ecb->Fragment[0].FragData;
@@ -730,7 +989,7 @@ void AMIPX_RIPESR(UBYTE caller,struct ECB2 *ecb)
 
      RIPECB->CardNum=0xff;
 
-     AMIPX_SendPacketR(AMIPX_Lib,RIPECB);
+     AMIPX_SendPacketR(AMIPX_Lib,(struct AMIPX_ECB *)RIPECB);
      AMIPX_Lib->CurrentRIPECB=(AMIPX_Lib->CurrentRIPECB+1)%AMIPX_RIPECBS;
     }
    }
@@ -770,9 +1029,17 @@ void AMIPX_RouteSearchTask(void)
  UBYTE *spd;
  UBYTE *ph[4];
  UBYTE *pd[4];
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct AMIPX_Library *AMIPX_Library;
+ struct ExecBase *SysBase=*((APTR *)4L);
 
+ Wait(SIGBREAKF_CTRL_F);
+ AMIPX_Library = FindTask(NULL)->tc_UserData;
+#else
  geta4();
+#endif
 
+ CardNum=taskcardnum; // uninitialized variable fix
  AMIPX_Lib=task_AMIPX_Lib;
 
  spd=(UBYTE *)(&lecb[0]);
@@ -849,8 +1116,14 @@ void AMIPX_RouteSearchTask(void)
   }
   if(spd)
    FreeVec(spd);
+#if defined(__VBCC__) || defined(__GNUC__)
+  Forbid();
+#endif
   Signal(callingtask,tasksigmask);
   DeleteTask(NULL);
+#if defined(__VBCC__) || defined(__GNUC__)
+  return;
+#endif
  }
  Signal(callingtask,tasksigmask);
  for(t=0;t<sizeof(ecb);t++)
@@ -994,6 +1267,9 @@ void AMIPX_RouteSearchTask(void)
   FreeVec(pd[t]);
  }
  FreeVec(spd);
+#if defined(__VBCC__) || defined(__GNUC__)
+ Forbid();
+#endif
  Signal(callingtask,tasksigmask); // tell AMIPX_Exit that we're done
  DeleteTask(NULL);
 }
@@ -1010,7 +1286,7 @@ void AMIPX_ListenTask(void)
  int e8022prefixsize=3;
  int e8023prefixsize=0;
  register int prefixsize,n;
- UWORD Flavour;
+ //UWORD Flavour;
  register UBYTE *prefix;
  register int t,socket;
  register unsigned long SockNum;
@@ -1030,14 +1306,25 @@ void AMIPX_ListenTask(void)
  struct IOSana2Req *ControlReq;
  struct AMIPX_PacketHeader *ph;
  UBYTE CardNum,for_us;
- 
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct AMIPX_Library *AMIPX_Library;
+ struct ExecBase *SysBase=*((APTR *)4L);
+
+ Wait(SIGBREAKF_CTRL_F);
+ AMIPX_Library = FindTask(NULL)->tc_UserData;
+#else
  geta4();
+#endif
 
  CardNum=taskcardnum;
 
  AMIPX_Lib=task_AMIPX_Lib;
 
+#if defined(__VBCC__) || defined(__GNUC__)
+ UtilityBase=task_AMIPX_Lib->UtilityBase;
+#else
  UtilityBase=(struct UtilityBase *)OpenLibrary((APTR)"Utility.library",0L);
+#endif
 
  NIC=tasknic;
 
@@ -1056,8 +1343,14 @@ void AMIPX_ListenTask(void)
   if(Sana2Port)
    DeleteMsgPort(Sana2Port);
 
+#if defined(__VBCC__) || defined(__GNUC__)
+  Forbid();
+#endif
   Signal(callingtask,tasksigmask);
   DeleteTask(NULL);
+#if defined(__VBCC__) || defined(__GNUC__)
+  return;
+#endif
  }
  NIC->KillInSignalMask=1<<sigbit;
  
@@ -1079,7 +1372,7 @@ void AMIPX_ListenTask(void)
   mytags[1].ti_Tag=S2_CopyFromBuff;
   mytags[1].ti_Data=(ULONG)CopyNothing;
   mytags[2].ti_Tag=TAG_DONE; 
-  mytags[2].ti_Data=NULL;
+  mytags[2].ti_Data=(ULONG)NULL;
 
   NIC=tasknic;
 
@@ -1102,7 +1395,9 @@ void AMIPX_ListenTask(void)
  }
 
  FreeTagItems(mytags);
+#if !defined(__VBCC__) && !defined(__GNUC__)
  CloseLibrary((struct Library *)UtilityBase);
+#endif
 
  for(t=0;t<AMIPX_READREQUESTS;t++) {
   NIC->InputReq[t]=NULL;
@@ -1131,8 +1426,14 @@ void AMIPX_ListenTask(void)
   if(DeviceReq)
    DeleteIORequest((struct IORequest *)DeviceReq);
 
+#if defined(__VBCC__) || defined(__GNUC__)
+  Forbid();
+#endif
   Signal(callingtask,tasksigmask);
   DeleteTask(NULL);
+#if defined(__VBCC__) || defined(__GNUC__)
+  return;
+#endif
  }
 
  AMIPX_initioreq(NIC,DeviceReq,ControlReq,NULL);
@@ -1230,14 +1531,21 @@ void AMIPX_ListenTask(void)
   CloseDevice((struct IORequest *)DeviceReq);
   DeleteIORequest((struct IORequest *)DeviceReq);
   DeleteIORequest((struct IORequest *)ControlReq);
+#if defined(__VBCC__) || defined(__GNUC__)
+  Forbid();
+#endif
   Signal(callingtask,tasksigmask);
   DeleteTask(NULL);
+#if defined(__VBCC__) || defined(__GNUC__)
+  return;
+#endif
  }
  running=1;
  ptype=1; // for all IEEE802.x frames
  if(NIC->SendFlavour==AMIPX_PT_ETHERNET_II)
   ptype = 33079;
 
+ sigmask=1<<Sana2Port->mp_SigBit; // uninitialized variable fix
  SetSignal(0L,NIC->KillInSignalMask|sigmask);
   
  for(t=0;t<AMIPX_READREQUESTS;t++) {
@@ -1250,7 +1558,7 @@ void AMIPX_ListenTask(void)
  }
  Signal(callingtask,tasksigmask); // Let AMIPX_InitNIC know we're up and running
 
- sigmask=1<<Sana2Port->mp_SigBit;
+ //sigmask=1<<Sana2Port->mp_SigBit;
  while(running) { // will get a signal from AMIPX_Exit
   while(running
         && CheckIO((struct IORequest *)NIC->InputReq[NIC->InputReqP])==NULL) {
@@ -1410,7 +1718,7 @@ void AMIPX_ListenTask(void)
          }
 
          if(NIC->SendFlavour==AMIPX_PT_AUTO)
-          NIC->SendFlavour=Flavour;
+          NIC->SendFlavour=AMIPX_PT_ETHERNET_802_2; // uninitialized variable fix Flavour;
 
          ecb->CompletionCode=0;
          ecb->CardNum=CardNum;
@@ -1465,6 +1773,9 @@ void AMIPX_ListenTask(void)
  DeleteIORequest((struct IORequest *)DeviceReq);
  DeleteIORequest((struct IORequest *)ControlReq);
  DeleteMsgPort(Sana2Port);
+#if defined(__VBCC__) || defined(__GNUC__)
+ Forbid();
+#endif
  Signal(callingtask,tasksigmask); // tell AMIPX_HaltNIC that we're done
  DeleteTask(NULL);
 }
@@ -1493,12 +1804,23 @@ void AMIPX_SendTask(void)
  struct IOSana2Req *DeviceReq;
  struct IOSana2Req *ControlReq;
  struct AMIPX_PacketHeader *ph;
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct AMIPX_Library *AMIPX_Library;
+ struct ExecBase *SysBase=*((APTR *)4L);
 
+ Wait(SIGBREAKF_CTRL_F);
+ AMIPX_Library = FindTask(NULL)->tc_UserData;
+#else
  geta4();
+#endif
 
  CardNum=taskcardnum;
 
+#if defined(__VBCC__) || defined(__GNUC__)
+ UtilityBase=task_AMIPX_Lib->UtilityBase;
+#else
  UtilityBase=(struct UtilityBase *)OpenLibrary((APTR)"Utility.library",0L);
+#endif
 
  AMIPX_Lib=task_AMIPX_Lib;
 
@@ -1524,7 +1846,7 @@ void AMIPX_SendTask(void)
   mytags[1].ti_Tag=S2_CopyFromBuff;
   mytags[1].ti_Data=(ULONG)CopyFromECBToS2;
   mytags[2].ti_Tag=TAG_DONE; 
-  mytags[2].ti_Data=NULL;
+  mytags[2].ti_Data=0;
 
   NIC=tasknic;
 
@@ -1553,7 +1875,9 @@ void AMIPX_SendTask(void)
    taskretval=0;
  }
  FreeTagItems(mytags);
+#if !defined(__VBCC__) && !defined(__GNUC__)
  CloseLibrary((struct Library *)UtilityBase);
+#endif
  if(taskretval==0) {
   if(NIC->OutputReq)
    DeleteIORequest((struct IORequest *)NIC->OutputReq);
@@ -1563,8 +1887,14 @@ void AMIPX_SendTask(void)
    DeleteIORequest((struct IORequest *)DeviceReq);
 
   NIC->OutputReq=NULL;
+#if defined(__VBCC__) || defined(__GNUC__)
+  Forbid();
+#endif
   Signal(callingtask,tasksigmask);
   DeleteTask(NULL);
+#if defined(__VBCC__) || defined(__GNUC__)
+  return;
+#endif
  }
  AMIPX_initioreq(NIC,DeviceReq,ControlReq,NULL);
 
@@ -1735,6 +2065,9 @@ void AMIPX_SendTask(void)
  DeleteIORequest((struct IORequest *)DeviceReq);
  DeleteIORequest((struct IORequest *)NIC->OutputReq);
  DeleteMsgPort(Sana2Port);
+#if defined(__VBCC__) || defined(__GNUC__)
+ Forbid();
+#endif
  Signal(callingtask,tasksigmask); // tell AMIPX_HaltNIC that we're done
  FreeSignal(sigbit);
  DeleteTask(NULL);
@@ -1752,6 +2085,9 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
  int sigbit;
  struct MsgPort *Sana2Port;
  struct IOSana2Req *DeviceReq;
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct UtilityBase *UtilityBase;
+#endif
 
  SysBase=AMIPX_Library->SysBase;
 
@@ -1761,20 +2097,26 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
 
  task_AMIPX_Lib=AMIPX_Library; // for initialisation of send and listen task
 
+#if defined(__VBCC__) || defined(__GNUC__)
+ UtilityBase=AMIPX_Library->UtilityBase;
+#else
  UtilityBase = (struct UtilityBase *)OpenLibrary((APTR)"utility.library",0L);
  if(UtilityBase==NULL) 
   return 0;
+#endif
 
  for(t=0;t<sizeof(struct Hook);t++)
   ((UBYTE *)&(NIC->PacketHook))[t]=0;
 
- NIC->PacketHook.h_Entry=AMIPX_PacketFilter;
- NIC->PacketHook.h_SubEntry=AMIPX_PacketFilter;
+ NIC->PacketHook.h_Entry=(ULONG (*)())AMIPX_PacketFilter;
+ //NIC->PacketHook.h_SubEntry=AMIPX_PacketFilter;
  NIC->PacketHook.h_Data=NIC;
     
  mytags=AllocateTagItems((ULONG)4);
  if(mytags==NULL) {
+#if !defined(__VBCC__) && !defined(__GNUC__)
   CloseLibrary((struct Library *)UtilityBase);
+#endif
   return 0;
  }
  mytags[0].ti_Tag=S2_CopyToBuff;
@@ -1784,7 +2126,7 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
  mytags[2].ti_Tag=S2_PacketFilter;
  mytags[2].ti_Data=(ULONG)(&(NIC->PacketHook));
  mytags[3].ti_Tag=TAG_DONE; 
- mytags[3].ti_Data=NULL;
+ mytags[3].ti_Data=0;
 
  taskcardnum=cardno;
 
@@ -1818,15 +2160,25 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
      SetSignal(0L,tasksigmask);
      NIC->InputTask=CreateTask((STRPTR)NIC->InTaskName,5L,AMIPX_ListenTask,4096);
      if(NIC->InputTask) {
+#if defined(__VBCC__) || defined(__GNUC__)
+      NIC->InputTask->tc_UserData = AMIPX_Library;
+      Signal(NIC->InputTask, SIGBREAKF_CTRL_F);
+#endif
       Wait(tasksigmask);
       if(taskretval) {
        taskretval=0;
        SetSignal(0L,tasksigmask);
        NIC->OutputTask=CreateTask((STRPTR)NIC->OutTaskName,5L,AMIPX_SendTask,4096);
        if(NIC->OutputTask) {
+#if defined(__VBCC__) || defined(__GNUC__)
+        NIC->OutputTask->tc_UserData = AMIPX_Library;
+        Signal(NIC->OutputTask, SIGBREAKF_CTRL_F);
+#endif
         Wait(tasksigmask);
         if(taskretval) {
+#if !defined(__VBCC__) && !defined(__GNUC__)
          CloseLibrary((struct Library *)UtilityBase);
+#endif
          CloseDevice((struct IORequest *)DeviceReq); // close the device: offspring have it open  
          DeleteIORequest((struct IORequest *)DeviceReq);
          DeleteMsgPort(Sana2Port);
@@ -1843,7 +2195,9 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
      }
      FreeSignal(sigbit);
     }
+#if !defined(__VBCC__) && !defined(__GNUC__)
     CloseLibrary((struct Library *)UtilityBase);
+#endif
     CloseDevice((struct IORequest *)DeviceReq);
     DeleteIORequest(DeviceReq);
     DeleteMsgPort(Sana2Port);
@@ -1853,7 +2207,9 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
     DeleteIORequest(DeviceReq);
     DeleteMsgPort(Sana2Port);
     FreeTagItems(mytags);
+#if !defined(__VBCC__) && !defined(__GNUC__)
     CloseLibrary((struct Library *)UtilityBase);
+#endif
     return 0;
    }
   }
@@ -1863,13 +2219,17 @@ int AMIPX_InitNIC(struct AMIPX_Library *AMIPX_Library,struct AMIPX_Nic *NIC,
 
    DeleteMsgPort(Sana2Port);
    FreeTagItems(mytags);
+#if !defined(__VBCC__) && !defined(__GNUC__)
    CloseLibrary((struct Library *)UtilityBase);
+#endif
    return 0;
   }
  }
  else {
   FreeTagItems(mytags);
+#if !defined(__VBCC__) && !defined(__GNUC__)
   CloseLibrary((struct Library *)UtilityBase);
+#endif
   return 0;
  }
 }
@@ -1915,11 +2275,15 @@ unsigned long AMIPX_Atoi(char *s)
  return value;
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+int AMIPX_strcmp(REG(a0, char *x),REG(a1, char *y))
+#else
 int AMIPX_strcmp(char *,char *);
 
 #pragma regcall(AMIPX_strcmp(A0,A1))
 
 int AMIPX_strcmp(char *x,char *y)
+#endif
 {
  register int strpos;
 
@@ -1937,7 +2301,12 @@ struct nodeaddr_s {
 int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
 {
 
+#if defined(__VBCC__) || defined(__GNUC__)
+ struct DosLibrary *DOSBase;
+ struct UtilityBase *UtilityBase;
+#else
  struct DosLibrary *DosLibrary;
+#endif
  BPTR cfgfile;
  unsigned char *mybuffer;
  ULONG mybufferlength=2048; 
@@ -1958,6 +2327,12 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
  int strpos;
  int numcards,maxnet,interval,cardno;
  char OK;
+
+
+#if defined(__VBCC__) || defined(__GNUC__)
+ DOSBase = AMIPX_Library->DOSBase;
+ UtilityBase = AMIPX_Library->UtilityBase;
+#endif
 
  AMIPX_Library->CardCount=0;
  AMIPX_Library->QuakeFix=0;
@@ -2023,15 +2398,22 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
  AMIPX_Library->RouteSearchInterval=30;
  AMIPX_Library->DontRoute=0;
  
+#if !defined(__VBCC__) && !defined(__GNUC__)
  DosLibrary = (struct DosLibrary *)OpenLibrary((APTR)"dos.library",37L);
+#endif
 
  AMIPX_Library->Max0Hops=0;
  mybuffer=(unsigned char *)AllocVec(mybufferlength,MEMF_PUBLIC);
  numcards=1;
  maxnet=16;
  for(cardno=0;cardno<AMIPX_MAXCARDS;cardno++) {
+#if defined(__VBCC__) || defined(__GNUC__)
+  sprintf(AMIPX_Library->Card[cardno].InTaskName,"amipx_lib%ldi",(APTR)cardno);
+  sprintf(AMIPX_Library->Card[cardno].OutTaskName,"amipx_lib%ldo",(APTR)cardno);
+#else
   sprintf(AMIPX_Library->Card[cardno].InTaskName,"amipx_lib%di",cardno);
   sprintf(AMIPX_Library->Card[cardno].OutTaskName,"amipx_lib%do",cardno);
+#endif
  }
  AMIPX_Library->Card[0].Unit=0;
  for(t2=0;t2<4;t2++)
@@ -2046,6 +2428,97 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
   cfgfile=Open((APTR)"env:amipx.prefs",MODE_OLDFILE);
 
   if(cfgfile) {
+#if defined(__VBCC__) || defined(__GNUC__)
+   while (FGets(cfgfile, line, sizeof(line)) != NULL) {
+    for(t=0;t<sizeof(line);t++) {
+     if (line[t] == '\n') {
+      line[t] = '\0';
+      break;
+     }
+    }
+
+    t2 = SplitName(line, ' ', keyword, 0, sizeof(keyword));
+
+     if(Stricmp(keyword,"quakefix")==0)
+      AMIPX_Library->QuakeFix=1;
+
+     if(Stricmp(keyword,"network")==0) {  // network number (ULONG)
+      netnum = 0;
+      StrToLong((STRPTR)&line[t2],(LONG *)&netnum);
+      AMIPX_Library->Card[numcards-1].NetAddress[0]=netnum>>24 & 0xff;
+      AMIPX_Library->Card[numcards-1].NetAddress[1]=netnum>>16 & 0xff;
+      AMIPX_Library->Card[numcards-1].NetAddress[2]=netnum>>8  & 0xff;
+      AMIPX_Library->Card[numcards-1].NetAddress[3]=netnum     & 0xff;
+     }
+     
+     if(Stricmp(keyword,"device")==0) {  // device path and name
+      strcpy(AMIPX_Library->Card[numcards-1].DeviceName,&line[t2]);
+     }
+
+     if(Stricmp(keyword,"max0hops")==0) {     // maximum hops for Network 0
+      max0hops = 0;
+       StrToLong((STRPTR)&line[t2],(LONG *)&max0hops);
+      if(max0hops>=0)
+       AMIPX_Library->Max0Hops=max0hops;
+     }
+
+     if(Stricmp(keyword,"maxsockets")==0) {   // maximum number of sockets
+      maxsockets = 0;
+       StrToLong((STRPTR)&line[t2],(LONG *)&maxsockets);
+      if(maxsockets>=1)
+       AMIPX_Library->MaxSockets=maxsockets;
+     }
+
+     if(Stricmp(keyword,"unit")==0) {     // unit number
+      unit = 0;
+       StrToLong((STRPTR)&line[t2],(LONG *)&unit);
+      if(unit>=0)
+       AMIPX_Library->Card[numcards-1].Unit=unit;
+     }
+     if(Stricmp(keyword,"node")==0) {    // node address (if no factory address)
+      nodeaddr.value = 0;
+       StrToLong((STRPTR)&line[t2],(LONG *)&nodeaddr.value);
+      nodeaddr.empty=0;
+      nodeaddrp=(unsigned char *)&nodeaddr;
+      for(t2=0;t2<sizeof(nodeaddr);t2++)
+       AMIPX_Library->Card[numcards-1].Address[t2]=nodeaddrp[t2];
+      for(;t2<SANA2_MAX_ADDR_BYTES;t2++)
+       AMIPX_Library->Card[numcards-1].Address[t2]=0;
+     }
+     if(Stricmp(keyword,"rsinterval")==0) { // router scan interval (secs)
+      interval = 0;
+       StrToLong((STRPTR)&line[t2],(LONG *)&interval);
+      if(interval<15)
+       interval=15;
+      AMIPX_Library->RouteSearchInterval=interval;
+     }
+     if(Stricmp(keyword,"maxnet")==0) {  // max number of entries in route table
+      maxnet = 0;
+       StrToLong((STRPTR)&line[t2],(LONG *)&maxnet);
+     }
+     if(Stricmp(keyword,"ethernet_ii")==0) 
+      AMIPX_Library->Card[numcards-1].SendFlavour=AMIPX_PT_ETHERNET_II;
+     
+     if(Stricmp(keyword,"ethernet_802.2")==0)
+      AMIPX_Library->Card[numcards-1].SendFlavour=AMIPX_PT_ETHERNET_802_2;
+     
+     if(Stricmp(keyword,"ethernet_802.3")==0)
+      AMIPX_Library->Card[numcards-1].SendFlavour=AMIPX_PT_ETHERNET_802_3;
+     
+     if(Stricmp(keyword,"ethernet_snap")==0)
+      AMIPX_Library->Card[numcards-1].SendFlavour=AMIPX_PT_ETHERNET_SNAP;
+
+     if(Stricmp(keyword,"auto")==0)
+      AMIPX_Library->Card[numcards-1].SendFlavour=AMIPX_PT_AUTO;
+
+     if(Stricmp(keyword,"----")==0)
+      numcards++;
+
+     if(Stricmp(keyword,"dontroute")==0)
+      AMIPX_Library->DontRoute=1;
+
+   }
+#else
    bytesread=Read(cfgfile,mybuffer,mybufferlength);
    
    t2=0;
@@ -2139,17 +2612,17 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
       t2++;
     }
    }
+#endif
    Close(cfgfile);
   }
   FreeVec(mybuffer);
-
   if(cfgfile) {
    AMIPX_Library->WaitingECB=(struct AMIPX_ECB **)
                AllocVec(AMIPX_Library->MaxSockets*sizeof(struct AMIPX_ECB *),
                         MEMF_PUBLIC|MEMF_CLEAR);
 
    if(AMIPX_Library->WaitingECB==NULL)
-    cfgfile=NULL;
+    cfgfile=0;
   }
 
   if(cfgfile) {
@@ -2157,7 +2630,7 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
                AllocVec(AMIPX_Library->MaxSockets*sizeof(UWORD),
                         MEMF_PUBLIC|MEMF_CLEAR);
    if(AMIPX_Library->SocketTable==NULL) {
-    cfgfile=NULL;
+    cfgfile=0;
     FreeVec(AMIPX_Library->WaitingECB);
     AMIPX_Library->WaitingECB=NULL;
    }
@@ -2167,7 +2640,7 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
                AllocVec(AMIPX_Library->MaxSockets*sizeof(UWORD),
                         MEMF_PUBLIC|MEMF_CLEAR);
    if(AMIPX_Library->SockIndex==NULL) {
-    cfgfile=NULL;
+    cfgfile=0;
     FreeVec(AMIPX_Library->SocketTable);
     AMIPX_Library->SocketTable=NULL;
     FreeVec(AMIPX_Library->WaitingECB);
@@ -2182,7 +2655,7 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
  
   AMIPX_Library->CardCount=numcards;
 
-  if(cfgfile!=NULL) {
+  if(cfgfile!=0) {
    OK=1;
    for(t=0;t<AMIPX_RIPECBS && OK;t++) {
     if((AMIPX_Library->RIPECB[t]=
@@ -2219,12 +2692,14 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
    }
    AMIPX_Library->CurrentRIPECB=0;
    if(!OK) {
+#if !defined(__VBCC__) && !defined(__GNUC__)
     CloseLibrary((struct Library *)DosLibrary);
+#endif
     return 0;
    }
   }
 
-  if(cfgfile!=NULL) {
+  if(cfgfile!=0) {
    AMIPX_Library->RouteTable[0]=(struct AMIPX_Route *)
               AllocVec(sizeof(struct AMIPX_Route)*(maxnet+numcards),
                        MEMF_PUBLIC|MEMF_CLEAR);
@@ -2251,10 +2726,10 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
     AMIPX_Library->RouteIndex[0]=NULL;
     AMIPX_Library->RouteTable[1]=NULL;
     AMIPX_Library->RouteIndex[1]=NULL;
-    cfgfile=NULL;
+    cfgfile=0;
    }
   }
-  if(cfgfile==NULL) {
+  if(cfgfile==0) {
    for(t=0;t<AMIPX_RIPECBS;t++) {
     if(AMIPX_Library->RIPECB[t])
      FreeVec(AMIPX_Library->RIPECB[t]);
@@ -2280,7 +2755,9 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
     FreeVec(AMIPX_Library->SendSem);
    if(AMIPX_Library->RouteSem) 
     FreeVec(AMIPX_Library->RouteSem);
+#if !defined(__VBCC__) && !defined(__GNUC__)
    CloseLibrary((struct Library *)DosLibrary);
+#endif
    return 0;
   }
  }
@@ -2293,7 +2770,9 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
    FreeVec(AMIPX_Library->SendSem);
   if(AMIPX_Library->RouteSem) 
    FreeVec(AMIPX_Library->RouteSem);
+#if !defined(__VBCC__) && !defined(__GNUC__)
   CloseLibrary((struct Library *)DosLibrary);
+#endif
   for(t=0;t<AMIPX_RIPECBS;t++) {
    if(AMIPX_Library->RIPECB[t])
     FreeVec(AMIPX_Library->RIPECB[t]);
@@ -2323,7 +2802,9 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
  for(t=0;t<3;t++)
   AMIPX_Library->e8022prefix[t]=e8022prefix[t];
 
+#if !defined(__VBCC__) && !defined(__GNUC__)
  CloseLibrary((struct Library *)DosLibrary);
+#endif
 
  AMIPX_Library->ESRTask=NULL;
  AMIPX_Library->RouteSearchTask=NULL;
@@ -2348,6 +2829,10 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
    AMIPX_Library->ESRTask=CreateTask((STRPTR)AMIPX_Library->ESRTaskName,0L,
                                      AMIPX_ESRTask,4096);
    if(AMIPX_Library->ESRTask) {
+#if defined(__VBCC__) || defined(__GNUC__)
+     AMIPX_Library->ESRTask->tc_UserData = AMIPX_Library;
+     Signal(AMIPX_Library->ESRTask, SIGBREAKF_CTRL_F);
+#endif
     Wait(tasksigmask);
     if(taskretval) {
      if(AMIPX_Library->DontRoute) {
@@ -2378,6 +2863,10 @@ int AMIPX_Init(struct AMIPX_Library *AMIPX_Library)
           CreateTask((STRPTR)AMIPX_Library->RSrchTaskName,0L,
                        AMIPX_RouteSearchTask,4096);
       if(AMIPX_Library->RouteSearchTask) { // submits ecbs, so NIC must be up
+#if defined(__VBCC__) || defined(__GNUC__)
+       AMIPX_Library->RouteSearchTask->tc_UserData = AMIPX_Library;
+       Signal(AMIPX_Library->RouteSearchTask, SIGBREAKF_CTRL_F);
+#endif
        Wait(tasksigmask);
        if(taskretval) {
         FreeSignal(sigbit);
@@ -2515,6 +3004,7 @@ void AMIPX_Exit(struct AMIPX_Library *AMIPX_Library)
  AMIPX_Library->ESR_Tail=NULL;
 }
 
+#if !defined(__VBCC__) && !defined(__GNUC__)
 #pragma regcall(AMIPX_GetLocalAddr(A6,A0))
 #pragma regcall(AMIPX_SendPacket(A6,A0))
 #pragma regcall(AMIPX_OpenSocket(A6,D0))
@@ -2522,15 +3012,26 @@ void AMIPX_Exit(struct AMIPX_Library *AMIPX_Library)
 #pragma regcall(AMIPX_ListenForPacket(A6,A0))
 #pragma regcall(AMIPX_RelinquishControl(A6))
 #pragma regcall(AMIPX_GetLocalTarget(A6,A0,A1))
+#endif
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_GetLocalTarget(REG(a6, struct AMIPX_Library *AMIPX_Library),
+			  REG(a0, UBYTE *internetwaddr),REG(a1, UBYTE *localtarget))
+#else
 UWORD AMIPX_GetLocalTarget(struct AMIPX_Library *AMIPX_Library,
 			  UBYTE *internetwaddr,UBYTE *localtarget)
+#endif
 {
  return AMIPX_GetLocalTargetI(AMIPX_Library,internetwaddr,localtarget);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_GetLocalTargetI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+			  REG(a0, UBYTE *internetwaddr),REG(a1, UBYTE *localtarget))
+#else
 UWORD AMIPX_GetLocalTargetI(struct AMIPX_Library *AMIPX_Library,
 			  UBYTE *internetwaddr,UBYTE *localtarget)
+#endif
 {
  int t;
  int indexpos,tablepos;
@@ -2575,24 +3076,42 @@ UWORD AMIPX_GetLocalTargetI(struct AMIPX_Library *AMIPX_Library,
  return 0xfa; // unsuccessful
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+VOID AMIPX_RelinquishControl(REG(a6, struct AMIPX_Library *AMIPX_Library))
+#else
 VOID AMIPX_RelinquishControl(struct AMIPX_Library *AMIPX_Library)
+#endif
 {
  AMIPX_RelinquishControlI(AMIPX_Library);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+VOID AMIPX_RelinquishControlI(REG(a6, struct AMIPX_Library *AMIPX_Library))
+#else
 VOID AMIPX_RelinquishControlI(struct AMIPX_Library *AMIPX_Library)
+#endif
 {
  AMIPX_cleanup(AMIPX_Library);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+VOID AMIPX_GetLocalAddr(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                        REG(a0, UBYTE *addressarray))
+#else
 VOID AMIPX_GetLocalAddr(struct AMIPX_Library *AMIPX_Library,
                         UBYTE *addressarray)
+#endif
 {
  AMIPX_GetLocalAddrI(AMIPX_Library,addressarray);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+VOID AMIPX_GetLocalAddrI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                        REG(a0, UBYTE *addressarray))
+#else
 VOID AMIPX_GetLocalAddrI(struct AMIPX_Library *AMIPX_Library,
                         UBYTE *addressarray)
+#endif
 {
  int t;
  struct SysBase *SysBase;
@@ -2605,8 +3124,13 @@ VOID AMIPX_GetLocalAddrI(struct AMIPX_Library *AMIPX_Library,
   addressarray[t+4]=AMIPX_Library->Card[0].CardAddress[t];
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_SendPacket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB))
+#else
 UWORD AMIPX_SendPacket(struct AMIPX_Library *AMIPX_Library,
                        struct AMIPX_ECB *ECB)
+#endif
 {
  struct AMIPX_PacketHeader *ph;
  int t;
@@ -2628,8 +3152,13 @@ UWORD AMIPX_SendPacket(struct AMIPX_Library *AMIPX_Library,
  return AMIPX_SendPacketI(AMIPX_Library,ECB);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_SendPacketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB))
+#else
 UWORD AMIPX_SendPacketI(struct AMIPX_Library *AMIPX_Library,
                        struct AMIPX_ECB *ECB)
+#endif
 {
  int t2;
  struct AMIPX_PacketHeader *ph;
@@ -2651,8 +3180,13 @@ UWORD AMIPX_SendPacketI(struct AMIPX_Library *AMIPX_Library,
  return AMIPX_SendPacketR(AMIPX_Library,ECB);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_SendPacketR(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB))
+#else
 UWORD AMIPX_SendPacketR(struct AMIPX_Library *AMIPX_Library,
                        struct AMIPX_ECB *ECB)
+#endif
 {
  int sendpackettype;
  int sendprefixsize;
@@ -2758,14 +3292,24 @@ UWORD AMIPX_SendPacketR(struct AMIPX_Library *AMIPX_Library,
  return 0;
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_OpenSocket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                      REG(d0, UWORD socknum))
+#else
 UWORD AMIPX_OpenSocket(struct AMIPX_Library *AMIPX_Library,
                       UWORD socknum)
+#endif
 {
  return AMIPX_OpenSocketI(AMIPX_Library,socknum);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_OpenSocketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                      REG(d0, UWORD socknum))
+#else
 UWORD AMIPX_OpenSocketI(struct AMIPX_Library *AMIPX_Library,
                       UWORD socknum)
+#endif
 {
  int t,freepos,socket;
  UWORD maxsocknum; 
@@ -2823,14 +3367,24 @@ UWORD AMIPX_OpenSocketI(struct AMIPX_Library *AMIPX_Library,
  return socknum;
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+VOID AMIPX_CloseSocket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(d0, UWORD socknum))
+#else
 VOID AMIPX_CloseSocket(struct AMIPX_Library *AMIPX_Library,
                        UWORD socknum)
+#endif
 {
  AMIPX_CloseSocketI(AMIPX_Library,socknum);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+VOID AMIPX_CloseSocketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(d0, UWORD socknum))
+#else
 VOID AMIPX_CloseSocketI(struct AMIPX_Library *AMIPX_Library,
                        UWORD socknum)
+#endif
 {
  int t,socket,ipos;
  struct AMIPX_SRequest *sreq;
@@ -2869,16 +3423,26 @@ VOID AMIPX_CloseSocketI(struct AMIPX_Library *AMIPX_Library,
  return;
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_ListenForPacket(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB))
+#else
 UWORD AMIPX_ListenForPacket(struct AMIPX_Library *AMIPX_Library,
                        struct AMIPX_ECB *ECB)
+#endif
 {
  AMIPX_Library->ListenRequests++;
  AMIPX_Library->ListenedOnSocket=ECB->Socket;
  return AMIPX_ListenForPacketI(AMIPX_Library,ECB);
 }
 
+#if defined(__VBCC__) || defined(__GNUC__)
+UWORD AMIPX_ListenForPacketI(REG(a6, struct AMIPX_Library *AMIPX_Library),
+                       REG(a0, struct AMIPX_ECB *ECB))
+#else
 UWORD AMIPX_ListenForPacketI(struct AMIPX_Library *AMIPX_Library,
                        struct AMIPX_ECB *ECB)
+#endif
 {
  int t,t2,ts,table;
  int socknum,knownsocket,socket;

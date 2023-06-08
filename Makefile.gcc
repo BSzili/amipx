@@ -1,0 +1,26 @@
+CC = m68k-amigaos-gcc
+RM = rm -f
+
+DEBUG = 1
+LIBRARY = amipx.library
+
+CFLAGS =  -noixemul -m68020 -Iinclude -funsigned-char -fno-common -fomit-frame-pointer -D__NO_INLINE__ -D__NOLIBBASE__ -Wall -Wno-pointer-sign -Wno-char-subscripts -Wno-unused-variable
+LDFLAGS =  -noixemul -m68020 -nostartfiles -lamiga -ldebug
+
+ifneq ($(DEBUG), 0)
+CFLAGS += -g -DDEBUG -save-temps
+LDFLAGS += -g
+else
+CFLAGS += -O2 -save-temps
+endif
+
+LIB_OBJ = \
+	amipx_lib.o \
+
+all: $(LIBRARY)
+
+$(LIBRARY): $(LIB_OBJ)
+	$(CC) -o $@ $< $(LDFLAGS) -Wl,-Map=$@.map
+
+clean:
+	$(RM) $(LIBRARY) $(LIB_OBJ)

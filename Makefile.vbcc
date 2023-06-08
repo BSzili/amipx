@@ -1,0 +1,28 @@
+CC = vc
+RM = rm -f
+
+DEBUG = 1
+LIBRARY = amipx.library
+
+CFLAGS = -cpu=68020 -Iinclude -warn=-1 -dontwarn=307,168,166,170,163,81,167
+LDFLAGS = -cpu=68020 -nostdlib -lamiga -ldebug
+# -lvc
+
+ifneq ($(DEBUG), 0)
+CFLAGS += -g -DDEBUG
+LDFLAGS += -g
+else
+CFLAGS += -O3
+LDFLAGS += -g
+endif
+
+LIB_OBJ = \
+	amipx_lib.o \
+
+all: $(LIBRARY)
+
+$(LIBRARY): $(LIB_OBJ)
+	$(CC) -o $@ $< $(LDFLAGS)
+
+clean:
+	$(RM) $(LIBRARY) $(LIB_OBJ)
